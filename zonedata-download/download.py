@@ -22,7 +22,7 @@ class czdsDownloader(object):
             raise czdsException("Error loading '" + configFilename + "' file.")
 
     def prepareDownloadFolder(self):
-        directory = './zonedata-download/zonefiles.' + self.td.strftime('%Y%m%d')
+        directory = './zonefiles/' + self.td.strftime('%Y%m%d')
         if not os.path.exists(directory):
             os.makedirs(directory)
         return directory
