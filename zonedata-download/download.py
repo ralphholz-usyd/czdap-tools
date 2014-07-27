@@ -55,7 +55,7 @@ for url in urls:
     if not os.path.exists(directory):
       os.makedirs(directory)
     print "downloading "+ filename
-    path = directory + '/' + filename + '.txt.gz'
+    path = directory + '/' + filename
     with open(path, 'wb') as f:
         for chunk in r.iter_content(1024):
             f.write(chunk)
