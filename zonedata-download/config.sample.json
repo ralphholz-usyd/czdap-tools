@@ -1,4 +1,5 @@
 {
-  "base_url": "https://czdap.icann.org",
-  "token": "XXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+    "base_url": "https://czds.icann.org",
+    "token": "XXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+    "prefetch": true
 }
