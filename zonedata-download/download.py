@@ -14,6 +14,7 @@ class czdsDownloader(object):
         """
         self.s = requests.Session()
         self.td = datetime.datetime.today()
+        self.readConfig()
 
     def readConfig(self, configFilename = 'config.json'):
         try:
@@ -22,7 +23,11 @@ class czdsDownloader(object):
             raise czdsException("Error loading '" + configFilename + "' file.")
 
     def prepareDownloadFolder(self):
-        directory = './zonefiles/' + self.td.strftime('%Y%m%d')
+        if 'download_directory' in self.conf:
+            directory = self.conf['download_directory'] + '/'
+        else:
+            directory = './zonefiles/'
+        directory = directory + self.td.strftime('%Y%m%d')
         if not os.path.exists(directory):
             os.makedirs(directory)
         return directory
@@ -108,9 +113,8 @@ class czdsDownloader(object):
 
 try:
     downloader = czdsDownloader()
-    downloader.readConfig()
     downloader.fetch()
 except Exception, e:
     sys.stderr.write("Error occoured: " + str(e) + "\n")
     exit(1)
-    
+
