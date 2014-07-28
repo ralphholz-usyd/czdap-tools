@@ -14,7 +14,8 @@ class czdsDownloader(object):
         """
         self.s = requests.Session()
         self.td = datetime.datetime.today()
-        self.readConfig()
+        config_file = os.path.dirname(os.path.realpath(__file__)) + '/config.json'
+        self.readConfig(config_file)
 
     def readConfig(self, configFilename = 'config.json'):
         try:
