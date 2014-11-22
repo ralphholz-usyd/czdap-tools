@@ -192,10 +192,10 @@ class czdsWebsite(object):
 
         return data
 
-    """ print current open / expired requests
+    """ print current requests
     """
     def printData(self, data):
-        for ky in ['open', 'expired']:
+        for ky in ['open', 'expired', 'approved', 'pending']:
             if ky in data :
                 print ky + ':'
                 for item in data[ky]:
