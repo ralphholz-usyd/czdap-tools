@@ -28,7 +28,7 @@ class czdsDownloader(object):
             directory = self.conf['download_directory'] + '/'
         else:
             directory = './zonefiles/'
-        directory = directory + self.td.strftime('%Y%m%d')
+        directory = directory + self.td.strftime('%Y-%m-%d')
         if not os.path.exists(directory):
             os.makedirs(directory)
         return directory
@@ -94,11 +94,18 @@ class czdsDownloader(object):
         if r.status_code != 200:
             raise czdsException("Unexpected response from CZDS while fetching '" + path + "'.")
         hData = self.parseHeaders(r.headers)
-        outputFile = directory + '/' + hData['date'] + '-' + hData['zone'] + '-' + self.td.strftime('%H%M') + '.zone.gz'
+        finalOutputFile = directory + '/' + hData['zone'] + '.zone.gz'
+        outputFile = finalOutputFile + '.tmp'
+
+        if os.path.isfile(finalOutputFile):
+            print hData['zone'] + " already exists"
+            return
 
         with open(outputFile, 'wb') as f:
             for chunk in r.iter_content(chunksize):
                 f.write(chunk)
+
+        os.rename(outputFile, finalOutputFile)
 
     def fetch(self):
         directory = self.prepareDownloadFolder()
