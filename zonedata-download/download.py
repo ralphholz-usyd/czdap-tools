@@ -113,11 +113,15 @@ class czdsDownloader(object):
         """ Grab each file.
         """
         for path in paths:
-            if 'prefetch' in self.conf and self.conf['prefetch']:
-                hData = self.prefetchZone(path)
-                if not self.isNewZone(directory, hData):
-                    continue
-            self.fetchZone(directory, path)
+            try:
+                if 'prefetch' in self.conf and self.conf['prefetch']:
+                    hData = self.prefetchZone(path)
+                    if not self.isNewZone(directory, hData):
+                        continue
+                self.fetchZone(directory, path)
+            except czdsException as e:
+                sys.stderr.write("Error occoured: " + str(e) + "\n")
+
 
 try:
     downloader = czdsDownloader()
