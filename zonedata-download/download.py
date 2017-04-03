@@ -5,6 +5,9 @@ import requests, json, sys, os, re, datetime
 class czdsException(Exception):
     pass
 
+class czdsException403(Exception):
+    pass
+
 class czdsDownloader(object):
     file_syntax_re = re.compile("""^(\d{8})\-([a-z\-0-9]+)\-zone\-data\.txt\.gz""", re.IGNORECASE)
     content_disposition_header_re = re.compile('^attachment; filename="([^"]+)"', re.IGNORECASE)
@@ -75,7 +78,9 @@ class czdsDownloader(object):
         """ Do a HTTP HEAD call to check if filesize changed
         """
         r = self.s.head(self.conf['base_url'] + path)
-        if r.status_code != 200:
+        if r.stats_code == 403:
+            raise czdsException403("403 error on prefetching " + path + "'.")
+        elif r.status_code != 200:
             raise czdsException("Unexpected response from CZDS while fetching '" + path + "'.")
         return self.parseHeaders(r.headers)
 
@@ -122,6 +127,8 @@ class czdsDownloader(object):
                 self.fetchZone(directory, path)
             except czdsException as e:
                 sys.stderr.write("Error occoured: " + str(e) + "\n")
+            except czdsException403 as e:
+                continue
 
 
 try:
