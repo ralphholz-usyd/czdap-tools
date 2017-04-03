@@ -41,7 +41,9 @@ class czdsDownloader(object):
         """
         r = self.s.get(self.conf['base_url'] + '/user-zone-data-urls.json?token=' + self.conf['token'])
         if r.status_code != 200:
-            raise czdsException("Unexpected response from CZDS while fetching urls list.")
+            #raise czdsException("Unexpected response from CZDS while fetching urls list.")
+            raise czdsException("Unexpected response from CZDS while getZonefilesList '" + \
+                self.conf['base_url'] + path + "'., code:" , r.status_code)
 
         try:
             # remove duplicate zone files
@@ -81,7 +83,9 @@ class czdsDownloader(object):
         if r.stats_code == 403:
             raise czdsException403("403 error on prefetching " + path + "'.")
         elif r.status_code != 200:
-            raise czdsException("Unexpected response from CZDS while fetching '" + path + "'.")
+            #raise czdsException("Unexpected response from CZDS while fetching '" + path + "'.")
+            raise czdsException("Unexpected response from CZDS while getZonefilesList '" + \
+                self.conf['base_url'] + path + "'., code:" , r.status_code)
         return self.parseHeaders(r.headers)
 
     def isNewZone(self, directory, hData):
@@ -98,7 +102,9 @@ class czdsDownloader(object):
         """
         r = self.s.get(self.conf['base_url'] + path, stream = True)
         if r.status_code != 200:
-            raise czdsException("Unexpected response from CZDS while fetching '" + path + "'.")
+            #raise czdsException("Unexpected response from CZDS while fetching '" + path + "'.")
+            raise czdsException("Unexpected response from CZDS while getZonefilesList '" + \
+                self.conf['base_url'] + path + "'., code:" , r.status_code)
         hData = self.parseHeaders(r.headers)
         finalOutputFile = directory + '/' + hData['zone'] + '.zone.gz'
         outputFile = finalOutputFile + '.tmp'
