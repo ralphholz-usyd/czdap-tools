@@ -80,7 +80,7 @@ class czdsDownloader(object):
         """ Do a HTTP HEAD call to check if filesize changed
         """
         r = self.s.head(self.conf['base_url'] + path)
-        if r.stats_code == 403:
+        if r.status_code == 403:
             raise czdsException403("403 error on prefetching " + path + "'.")
         elif r.status_code != 200:
             #raise czdsException("Unexpected response from CZDS while fetching '" + path + "'.")
