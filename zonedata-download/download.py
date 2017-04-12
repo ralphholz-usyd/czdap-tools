@@ -1,12 +1,12 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # -*- coding:utf-8
-import requests, json, sys, os, re, datetime
+import requests, json, sys, os, re, datetime, logging
+
+downloaded_zones = 0
 
 class czdsException(Exception):
     pass
 
-class czdsException403(Exception):
-    pass
 
 class czdsDownloader(object):
     file_syntax_re = re.compile("""^(\d{8})\-([a-z\-0-9]+)\-zone\-data\.txt\.gz""", re.IGNORECASE)
@@ -41,16 +41,17 @@ class czdsDownloader(object):
         """
         r = self.s.get(self.conf['base_url'] + '/user-zone-data-urls.json?token=' + self.conf['token'])
         if r.status_code != 200:
-            #raise czdsException("Unexpected response from CZDS while fetching urls list.")
             raise czdsException("Unexpected response from CZDS while getZonefilesList '" + \
                 self.conf['base_url'] + path + "'., code:" , r.status_code)
 
         try:
             # remove duplicate zone files
             files = list(set(json.loads(r.text)))
-        except Exception, e:
+        except Exception as e:
             raise czdsException("Unable to parse JSON returned from CZDS: " + str(e))
 
+        logging.info("getZonefilesList returns {} zones".format(len(files)))
+        logging.debug("getZonefilesList returning zones are: {}".format(files))
         return files
 
     def parseHeaders(self, headers):
@@ -80,13 +81,16 @@ class czdsDownloader(object):
         """ Do a HTTP HEAD call to check if filesize changed
         """
         r = self.s.head(self.conf['base_url'] + path)
-        if r.status_code == 403:
-            raise czdsException403("403 error on prefetching " + path + "'.")
-        elif r.status_code != 200:
+        #if r.status_code == 403:
+        #    raise czdsException403("403 error on prefetching " + path + "'.")
+        if r.status_code != 200:
             #raise czdsException("Unexpected response from CZDS while fetching '" + path + "'.")
+            logging.error("Unexpected response from CZDS while getZonefilesList '{}{}''.,"\
+                " code: {}".format(self.conf['base_url'], path, r.status_code))
             raise czdsException("Unexpected response from CZDS while getZonefilesList '" + \
                 self.conf['base_url'] + path + "'., code:" , r.status_code)
-        return self.parseHeaders(r.headers)
+        else:
+            return self.parseHeaders(r.headers)
 
     def isNewZone(self, directory, hData):
         """ Check if local zonefile exists and has identical filesize
@@ -100,9 +104,12 @@ class czdsDownloader(object):
     def fetchZone(self, directory, path, chunksize = 1024):
         """ Do a regular GET call to fetch zonefile
         """
+        logging.debug("fetching zone {}".format(self.conf['base_url'] + path))
         r = self.s.get(self.conf['base_url'] + path, stream = True)
         if r.status_code != 200:
             #raise czdsException("Unexpected response from CZDS while fetching '" + path + "'.")
+            logging.warning("Unexpected response from CZDS while getZonefilesList '" + \
+                self.conf['base_url'] + path + "'., code:" , r.status_code)
             raise czdsException("Unexpected response from CZDS while getZonefilesList '" + \
                 self.conf['base_url'] + path + "'., code:" , r.status_code)
         hData = self.parseHeaders(r.headers)
@@ -110,7 +117,7 @@ class czdsDownloader(object):
         outputFile = finalOutputFile + '.tmp'
 
         if os.path.isfile(finalOutputFile):
-            print hData['zone'] + " already exists"
+            logging.warning("file for zone '{}' already exists!".format(hData['zone']))
             return
 
         with open(outputFile, 'wb') as f:
@@ -118,12 +125,16 @@ class czdsDownloader(object):
                 f.write(chunk)
 
         os.rename(outputFile, finalOutputFile)
+        logging.debug("Downloaded \"{}\" zone".format(hData['zone'] ))
+        downloaded_zones = downloaded_zones + 1
 
     def fetch(self):
         directory = self.prepareDownloadFolder()
+        logging.basicConfig(filename=directory+"/downloader.log",level=logging.DEBUG, \
+            format='%(asctime)s %(levelname)s:%(name)s:%(module)s:%(funcName)s: %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
+        logging.warning("testlog")
         paths = self.getZonefilesList()
-        """ Grab each file.
-        """
+        # Grab each file.
         for path in paths:
             try:
                 if 'prefetch' in self.conf and self.conf['prefetch']:
@@ -132,15 +143,15 @@ class czdsDownloader(object):
                         continue
                 self.fetchZone(directory, path)
             except czdsException as e:
-                sys.stderr.write("Error occoured: " + str(e) + "\n")
-            except czdsException403 as e:
-                continue
+                pass
 
-
+# TODO: make this a proper main function
 try:
     downloader = czdsDownloader()
     downloader.fetch()
-except Exception, e:
+    logging.info("Complete, downloaded {} zone files.".format(downloaded_zones))
+    print("Complete, downloaded {} zone files.".format(downloaded_zones))
+except Exception as e:
     sys.stderr.write("Error occoured: " + str(e) + "\n")
     exit(1)
 
