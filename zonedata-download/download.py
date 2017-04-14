@@ -126,6 +126,7 @@ class czdsDownloader(object):
 
         os.rename(outputFile, finalOutputFile)
         logging.debug("Downloaded \"{}\" zone".format(hData['zone'] ))
+        global downloaded_zones
         downloaded_zones = downloaded_zones + 1
 
     def fetch(self):
