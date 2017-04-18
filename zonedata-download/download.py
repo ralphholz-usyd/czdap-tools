@@ -3,6 +3,7 @@
 import requests, json, sys, os, re, datetime, logging
 
 downloaded_zones = 0
+retries = 0
 
 class czdsException(Exception):
     pass
@@ -80,17 +81,28 @@ class czdsDownloader(object):
     def prefetchZone(self, path):
         """ Do a HTTP HEAD call to check if filesize changed
         """
-        r = self.s.head(self.conf['base_url'] + path)
-        #if r.status_code == 403:
-        #    raise czdsException403("403 error on prefetching " + path + "'.")
-        if r.status_code != 200:
-            #raise czdsException("Unexpected response from CZDS while fetching '" + path + "'.")
-            logging.error("Unexpected response from CZDS while getZonefilesList '{}{}''.,"\
-                " code: {}".format(self.conf['base_url'], path, r.status_code))
-            raise czdsException("Unexpected response from CZDS while getZonefilesList '" + \
-                self.conf['base_url'] + path + "'., code:" , r.status_code)
+        try:
+            r = self.s.head(self.conf['base_url'] + path)
+        except (urllib3.HTTPError, urllib3.URLError) as e:
+            logging.error("Caught ulrllib2.HTTPError, retrying. Error: {}".format(e))
+            sys.std.err.write("Caught ulrllib2.HTTPError, retrying. Error: {}".format(e))
+            global retries
+            if retries < 10:
+                retries += 1
+                time.sleep(10*retries)
+                prefetchZone(self, path)
+            else:
+                logging.error("Giving up, too many retries ({})".format(retries))
+                sys.exit(1)
         else:
-            return self.parseHeaders(r.headers)
+            if r.status_code != 200:
+                #raise czdsException("Unexpected response from CZDS while fetching '" + path + "'.")
+                logging.error("Unexpected response from CZDS while getZonefilesList '{}{}''.,"\
+                    " code: {}".format(self.conf['base_url'], path, r.status_code))
+                raise czdsException("Unexpected response from CZDS while getZonefilesList '" + \
+                    self.conf['base_url'] + path + "'., code:" , r.status_code)
+            else:
+                return self.parseHeaders(r.headers)
 
     def isNewZone(self, directory, hData):
         """ Check if local zonefile exists and has identical filesize
@@ -105,29 +117,42 @@ class czdsDownloader(object):
         """ Do a regular GET call to fetch zonefile
         """
         logging.debug("fetching zone {}".format(self.conf['base_url'] + path))
-        r = self.s.get(self.conf['base_url'] + path, stream = True)
-        if r.status_code != 200:
-            #raise czdsException("Unexpected response from CZDS while fetching '" + path + "'.")
-            logging.warning("Unexpected response from CZDS while getZonefilesList '" + \
-                self.conf['base_url'] + path + "'., code:" , r.status_code)
-            raise czdsException("Unexpected response from CZDS while getZonefilesList '" + \
-                self.conf['base_url'] + path + "'., code:" , r.status_code)
-        hData = self.parseHeaders(r.headers)
-        finalOutputFile = directory + '/' + hData['zone'] + '.zone.gz'
-        outputFile = finalOutputFile + '.tmp'
+        try:
+            r = self.s.get(self.conf['base_url'] + path, stream = True)
+        except (urllib3.HTTPError, urllib3.URLError) as e:
+            logging.error("Caught ulrllib2.HTTPError, retrying. Error: {}".format(e))
+            sys.std.err.write("Caught ulrllib2.HTTPError, retrying. Error: {}".format(e))
+            global retries
+            if retries < 10:
+                retries += 1
+                time.sleep(10*retries)
+                fetchZone(self, directory, path, chunksize)
+            else:
+                logging.error("Giving up, too many retries ({})".format(retries))
+                sys.exit(1)
+        else:
+            if r.status_code != 200:
+                #raise czdsException("Unexpected response from CZDS while fetching '" + path + "'.")
+                logging.warning("Unexpected response from CZDS while getZonefilesList '" + \
+                    self.conf['base_url'] + path + "'., code:" , r.status_code)
+                raise czdsException("Unexpected response from CZDS while getZonefilesList '" + \
+                    self.conf['base_url'] + path + "'., code:" , r.status_code)
+            hData = self.parseHeaders(r.headers)
+            finalOutputFile = directory + '/' + hData['zone'] + '.zone.gz'
+            outputFile = finalOutputFile + '.tmp'
 
-        if os.path.isfile(finalOutputFile):
-            logging.warning("file for zone '{}' already exists!".format(hData['zone']))
-            return
+            if os.path.isfile(finalOutputFile):
+                logging.warning("file for zone '{}' already exists!".format(hData['zone']))
+                return
 
-        with open(outputFile, 'wb') as f:
-            for chunk in r.iter_content(chunksize):
-                f.write(chunk)
+            with open(outputFile, 'wb') as f:
+                for chunk in r.iter_content(chunksize):
+                    f.write(chunk)
 
-        os.rename(outputFile, finalOutputFile)
-        logging.debug("Downloaded \"{}\" zone".format(hData['zone'] ))
-        global downloaded_zones
-        downloaded_zones = downloaded_zones + 1
+            os.rename(outputFile, finalOutputFile)
+            logging.debug("Downloaded \"{}\" zone".format(hData['zone'] ))
+            global downloaded_zones
+            downloaded_zones = downloaded_zones + 1
 
     def fetch(self):
         directory = self.prepareDownloadFolder()
@@ -150,9 +175,10 @@ class czdsDownloader(object):
 try:
     downloader = czdsDownloader()
     downloader.fetch()
-    logging.info("Complete, downloaded {} zone files.".format(downloaded_zones))
-    print("Complete, downloaded {} zone files.".format(downloaded_zones))
 except Exception as e:
-    sys.stderr.write("Error occoured: " + str(e) + "\n")
+    sys.stderr.write("CZDS: After downloading {} domains, fatal error occoured: {}.".format(downloaded_zones, e))
+    logging.error("CZDS: After downloading {} domains, fatal error occoured: {}.".format(downloaded_zones, e))
     exit(1)
-
+else:
+    logging.info("Complete, downloaded {} zone files.".format(downloaded_zones))
+    sys.stderr.write("CZDownloads: Complete, downloaded {} zone files.\n".format(downloaded_zones))
