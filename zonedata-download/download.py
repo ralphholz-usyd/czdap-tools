@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding:utf-8
-import requests, json, sys, os, re, datetime, logging
+import requests, json, sys, os, re, datetime, logging, time
 
 downloaded_zones = 0
 retries = 0
@@ -44,7 +44,6 @@ class czdsDownloader(object):
         if r.status_code != 200:
             raise czdsException("Unexpected response from CZDS while getZonefilesList '" + \
                 self.conf['base_url'] + path + "'., code:" , r.status_code)
-
         try:
             # remove duplicate zone files
             files = list(set(json.loads(r.text)))
@@ -83,7 +82,7 @@ class czdsDownloader(object):
         """
         try:
             r = self.s.head(self.conf['base_url'] + path)
-        except (urllib3.HTTPError, urllib3.URLError) as e:
+        except Exception as e:
             logging.error("Caught ulrllib2.HTTPError, retrying. Error: {}".format(e))
             sys.std.err.write("Caught ulrllib2.HTTPError, retrying. Error: {}".format(e))
             global retries
@@ -119,7 +118,7 @@ class czdsDownloader(object):
         logging.debug("fetching zone {}".format(self.conf['base_url'] + path))
         try:
             r = self.s.get(self.conf['base_url'] + path, stream = True)
-        except (urllib3.HTTPError, urllib3.URLError) as e:
+        except Exception as e:
             logging.error("Caught ulrllib2.HTTPError, retrying. Error: {}".format(e))
             sys.std.err.write("Caught ulrllib2.HTTPError, retrying. Error: {}".format(e))
             global retries
