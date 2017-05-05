@@ -90,7 +90,7 @@ class czdsDownloader(object):
             if retries < 10:
                 retries += 1
                 time.sleep(10 * retries)
-                self.prefetchZone(self, path)
+                self.prefetchZone(path)
             else:
                 logging.error("Giving up, too many retries ({})".format(retries))
                 sys.exit(1)
@@ -126,7 +126,7 @@ class czdsDownloader(object):
             if retries < 10:
                 retries += 1
                 time.sleep(10 * retries)
-                self.fetchZone(self, directory, path, chunksize)
+                self.fetchZone(directory, path, chunksize)
             else:
                 logging.error("Giving up, too many retries ({})".format(retries))
                 sys.exit(1)
