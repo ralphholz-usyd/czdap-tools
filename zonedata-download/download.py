@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding:utf-8
-import requests, json, sys, os, re, datetime, logging, time
+import requests, json, sys, os, re, datetime, logging, time, traceback
 
 downloaded_zones = 0
 retries = 0
@@ -41,19 +41,32 @@ class czdsDownloader(object):
     def getZonefilesList(self):
         """ Get all the files that need to be downloaded using CZDS API.
         """
-        r = self.s.get(self.conf['base_url'] + '/user-zone-data-urls.json?token=' + self.conf['token'])
-        if r.status_code != 200:
-            raise czdsException("Unexpected response from CZDS while getZonefilesList '" +
-                                self.conf['base_url'] + path + "'., code:", r.status_code)
         try:
-            # remove duplicate zone files
-            files = list(set(json.loads(r.text)))
+            r = self.s.get(self.conf['base_url'] + '/user-zone-data-urls.json?token=' + self.conf['token'])
         except Exception as e:
-            raise czdsException("Unable to parse JSON returned from CZDS: " + str(e))
+            logging.error("Caught ulrllib2.HTTPError in url-json, retrying. Error: {}".format(e))
+            sys.stderr.write("Caught ulrllib2.HTTPErrorin url-json, retrying. Error: {}".format(e))
+            global retries
+            if retries < 10:
+                retries += 1
+                time.sleep(10 * retries)
+                self.getZonefilesList()
+            else:
+                logging.error("Giving up, too many retries in getZonefilesList ({})".format(retries))
+                sys.exit(1)
+        else:
+            if r.status_code != 200:
+                raise czdsException("Unexpected response from CZDS while getZonefilesList '" +
+                                    self.conf['base_url'] + "...'., code:", r.status_code)
+            try:
+                # remove duplicate zone files
+                files = list(set(json.loads(r.text)))
+            except Exception as e:
+                raise czdsException("Unable to parse JSON returned from CZDS: " + str(e))
 
-        logging.info("getZonefilesList returns {} zones".format(len(files)))
-        logging.debug("getZonefilesList returning zones are: {}".format(files))
-        return files
+            logging.info("getZonefilesList returns {} zones".format(len(files)))
+            logging.debug("getZonefilesList returning zones are: {}".format(files))
+            return files
 
     def parseHeaders(self, headers):
         if 'content-disposition' not in headers:
@@ -179,6 +192,7 @@ try:
 except Exception as e:
     sys.stderr.write("CZDS: After downloading {} domains, fatal error occoured: {}.".format(downloaded_zones, e))
     logging.error("CZDS: After downloading {} domains, fatal error occoured: {}.".format(downloaded_zones, e))
+    sys.stderr.write(traceback.print_exception())
     exit(1)
 else:
     logging.info("Complete, downloaded {} zone files.".format(downloaded_zones))
