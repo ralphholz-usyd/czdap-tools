@@ -44,9 +44,9 @@ class czdsDownloader(object):
         try:
             r = self.s.get(self.conf['base_url'] + '/user-zone-data-urls.json?token=' + self.conf['token'])
         except Exception as e:
-            logging.error("Caught ulrllib2.HTTPError in url-json, retrying. Error: {}".format(e))
-            sys.stderr.write("Caught ulrllib2.HTTPErrorin url-json, retrying. Error: {}".format(e))
             global retries
+            logging.error("Caught exception in getZonefilesList, retry #{}. Error: {}".format(retries, e))
+            sys.stderr.write("Caught exception in getZonefilesList, retry #{}. Error: {}".format(retries, e))
             if retries < 10:
                 retries += 1
                 time.sleep(10 * retries)
@@ -182,7 +182,7 @@ class czdsDownloader(object):
                         continue
                 self.fetchZone(directory, path)
             except czdsException as e:
-                pass
+                logging.info("Exception at fetch: {}".format(e))
 
 
 # TODO: make this a proper main function
@@ -192,7 +192,8 @@ try:
 except Exception as e:
     sys.stderr.write("CZDS: After downloading {} domains, fatal error occoured: {}.".format(downloaded_zones, e))
     logging.error("CZDS: After downloading {} domains, fatal error occoured: {}.".format(downloaded_zones, e))
-    sys.stderr.write(traceback.print_exception())
+    #sys.stderr.write(traceback.print_exception())
+    sys.stderr.write(traceback.print_exc())
     exit(1)
 else:
     logging.info("Complete, downloaded {} zone files.".format(downloaded_zones))
