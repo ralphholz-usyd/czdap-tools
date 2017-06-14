@@ -208,7 +208,7 @@ except Exception as e:
     sys.stderr.write("CZDS: After downloading {} domains, fatal error occoured: {}.".format(downloaded_zones, e))
     logging.error("CZDS: After downloading {} domains, fatal error occoured: {}.".format(downloaded_zones, e))
     #sys.stderr.write(traceback.print_exception())
-    sys.stderr.write(traceback.print_exc())
+    #sys.stderr.write(traceback.print_exc())
     exit(1)
 else:
     logging.info("Complete, downloaded {} zone files.".format(downloaded_zones))
