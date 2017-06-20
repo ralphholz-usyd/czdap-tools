@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding:utf-8
-import requests, json, sys, os, re, datetime, logging, traceback
+import requests, json, sys, os, re, datetime, logging  # , traceback
 
 downloaded_zones = 0
 # retries = 0
@@ -151,12 +151,12 @@ class czdsDownloader(object):
             except Exception as e:
                 logging.error("Caught ulrllib2.HTTPError, retrying. Error: {}".format(e))
                 sys.stderr.write("Caught ulrllib2.HTTPError, retrying. Error: {}".format(e))
-                #global retries
-                #if retries < 10:
+                # global retries
+                # if retries < 10:
                 #    retries += 1
                 #    time.sleep(10 * retries)
                 #    self.fetchZone(directory, path, chunksize)
-                #else:
+                # else:
                 #    logging.error("Giving up, too many retries ({})".format(retries))
                 #    sys.exit(1)
                 retries += 1
@@ -214,8 +214,8 @@ try:
 except Exception as e:
     sys.stderr.write("CZDS: After downloading {} domains, fatal error occoured: {}.".format(downloaded_zones, e))
     logging.error("CZDS: After downloading {} domains, fatal error occoured: {}.".format(downloaded_zones, e))
-    #sys.stderr.write(traceback.print_exception())
-    #sys.stderr.write(traceback.print_exc())
+    # sys.stderr.write(traceback.print_exception())
+    # sys.stderr.write(traceback.print_exc())
     exit(1)
 else:
     logging.info("Complete, downloaded {} zone files.".format(downloaded_zones))
