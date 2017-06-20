@@ -60,6 +60,8 @@ class czdsDownloader(object):
             else:
                 retries = 100
                 if r.status_code != 200:
+                    if r.status_code == 403:
+                        print("403 error in getZonefilesList for domain {}".format(self.conf['base_url']))
                     raise czdsException("Unexpected response from CZDS while getZonefilesList '" +
                                         self.conf['base_url'] + "...'., code:", r.status_code)
                     break
@@ -107,17 +109,19 @@ class czdsDownloader(object):
             except Exception as e:
                 logging.error("Caught ulrllib2.HTTPError, retrying. Error: {}".format(e))
                 sys.stderr.write("Caught ulrllib2.HTTPError, retrying. Error: {}".format(e))
-                #global retries
-                #if retries < 10:
+                # global retries
+                # if retries < 10:
                 #    retries += 1
                 #    time.sleep(10 * retries)
                 #    self.prefetchZone(path)
-                #else:
+                # else:
                 #    logging.error("Giving up, too many retries ({})".format(retries))
                 #    sys.exit(1)
                 retries += 1
             else:
                 if r.status_code != 200:
+                    if r.status_code == 403:
+                        print("403 error in getZonefilesList for domain {}".format(self.conf['base_url']))
                     # raise czdsException("Unexpected response from CZDS while fetching '" + path + "'.")
                     logging.error("Unexpected response from CZDS while getZonefilesList '{}{}''.,"
                                   " code: {}".format(self.conf['base_url'], path, r.status_code))
@@ -159,6 +163,9 @@ class czdsDownloader(object):
             else:
                 retries = 100
                 if r.status_code != 200:
+                    if r.status_code == 403:
+                        print("403 error in getZonefilesList for domain {}".format(self.conf['base_url']))
+
                     # raise czdsException("Unexpected response from CZDS while fetching '" + path + "'.")
                     logging.warning("Unexpected response from CZDS while getZonefilesList '" +
                                     self.conf['base_url'] + path + "'., code:", r.status_code)
