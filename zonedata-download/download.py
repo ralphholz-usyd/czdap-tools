@@ -107,8 +107,8 @@ class czdsDownloader(object):
             try:
                 r = self.s.head(self.conf['base_url'] + path)
             except Exception as e:
-                logging.error("Caught ulrllib2.HTTPError, retrying. Error: {}".format(e))
-                sys.stderr.write("Caught ulrllib2.HTTPError, retrying. Error: {}".format(e))
+                logging.error("Caught ulrllib2.HTTPError in head, retrying #{}. Error: {}, path {}".format(retries, e, path))
+                sys.stderr.write("Caught ulrllib2.HTTPError in head, retrying #{}. Error: {}, path {}\n".format(retries, e, path))
                 # global retries
                 # if retries < 10:
                 #    retries += 1
@@ -212,7 +212,7 @@ try:
     downloader = czdsDownloader()
     downloader.fetch()
 except Exception as e:
-    sys.stderr.write("CZDS: After downloading {} domains, fatal error occoured: {}.".format(downloaded_zones, e))
+    sys.stderr.write("CZDS: After downloading {} domains, fatal error occoured: {}.\n".format(downloaded_zones, e))
     logging.error("CZDS: After downloading {} domains, fatal error occoured: {}.".format(downloaded_zones, e))
     # sys.stderr.write(traceback.print_exception())
     # sys.stderr.write(traceback.print_exc())
