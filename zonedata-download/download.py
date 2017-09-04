@@ -107,8 +107,8 @@ class czdsDownloader(object):
             try:
                 r = self.s.head(self.conf['base_url'] + path)
             except Exception as e:
-                logging.error("Caught ulrllib2.HTTPError in head, retrying #{}. Error: {}, path {}".format(retries, e, path))
-                sys.stderr.write("Caught ulrllib2.HTTPError in head, retrying #{}. Error: {}, path {}\n".format(retries, e, path))
+                logging.error("Caught ulrllib2.HTTPError in head, retrying #{}. Error: {}, path {}".format(retries, e, self.conf['base_url'] + path))
+                sys.stderr.write("Caught ulrllib2.HTTPError in head, retrying #{}. Error: {}, path {}\n".format(retries, e, self.conf['base_url'] + path))
                 # global retries
                 # if retries < 10:
                 #    retries += 1
