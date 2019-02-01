@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding:utf-8
+import argparse
 import datetime
 import json
 import logging
@@ -7,8 +8,6 @@ import os
 import requests
 import smtplib
 import sys
-
-downloaded_zones = 0
 
 
 class GetError(Exception):
@@ -21,12 +20,11 @@ class CZDSError(Exception):
 
 
 class CZDSDownloader(object):
-    def __init__(self):
+    def __init__(self, config_file):
         """ Create a session
         """
         self.s = requests.Session()
         self.td = datetime.datetime.today()
-        config_file = os.path.dirname(os.path.realpath(__file__)) + '/config.json'
         self.config = None
         self.load_config(config_file)
         self.retries = 0
@@ -36,6 +34,8 @@ class CZDSDownloader(object):
         self.directory = None
         self.access_token = None
         self.downloadable_zones = 0
+        # set up everything, including logging
+        self.prepare_download_folder()
 
     def load_config(self, cfg_file):
         try:
@@ -60,6 +60,9 @@ class CZDSDownloader(object):
         self.directory = self.get_config_item('output_directory') + '/' + self.td.strftime('%Y-%m-%d')
         if not os.path.exists(self.directory):
             os.makedirs(self.directory)
+        logging.basicConfig(filename=self.directory + "/download.log", level=logging.DEBUG,
+                            format='%(asctime)s %(levelname)s:%(name)s:%(module)s:%(funcName)s: %(message)s',
+                            datefmt='%Y-%m-%d %H:%M:%S')
 
     def czds_authenticate(self):
         auth_headers = {'Content-Type': 'application/json',
@@ -164,7 +167,6 @@ class CZDSDownloader(object):
             else:
                 try:
                     # remove duplicate zone files
-                    #json_response = json.loads(zonelist_response.text)
                     full_list = list(zonelist_response)
                     distinct_list = list(set(zonelist_response))
                     if len(distinct_list) != len(full_list):
@@ -212,13 +214,8 @@ class CZDSDownloader(object):
                 return download
 
     def fetch(self):
-        self.prepare_download_folder()
-        logging.basicConfig(filename=self.directory + "/downloader.log", level=logging.DEBUG,
-                            format='%(asctime)s %(levelname)s:%(name)s:%(module)s:%(funcName)s: %(message)s',
-                            datefmt='%Y-%m-%d %H:%M:%S')
-
         which_zones = self.get_config_item("zones", "all")
-        print('Fetching the following zones from CZDS: {}'.format(which_zones))
+        logging.info('Fetching the following zones from CZDS: {}'.format(which_zones))
 
         try:
             zonelist = self.get_zonefiles_list()
@@ -261,21 +258,26 @@ class CZDSDownloader(object):
 
 
 def main():
-    if len(sys.argv) != 2:
-        sys.stderr.write('Invoke with config file name as only argument.\n')
-        sys.exit(1)
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-c", "--config", type=str, help="use config file")
+    args = parser.parse_args()
 
-    downloader = CZDSDownloader()
+    if not args.config:
+        print("No config file given, trying default (config.json).")
+        args.config = "config.json"
+
+    downloader = CZDSDownloader(args.config)
 
     downloader.czds_authenticate()
 
     downloader.fetch()
 
-    logging.info("Complete, downloaded {} zone files of {}.".format(downloaded_zones, downloader.downloadable_zones))
-    sys.stderr.write("CZDownloads: Complete, downloaded {} zone files of {}.\n".format(downloaded_zones,
-                                                                                       downloader.downloadable_zones))
-    downloader.send_msg("Downloaded {} zonefiles of {}.".format(downloader.downloaded_zones,
-                                                                downloader.downloadable_zones), fail=False)
+    logging.info("Complete, downloaded {} zone files of {}."
+                 .format(downloader.downloaded_zones, downloader.downloadable_zones))
+    sys.stderr.write("CZDownloads: Complete, downloaded {} zone files of {}.\n"
+                     .format(downloader.downloaded_zones, downloader.downloadable_zones))
+    downloader.send_msg("Downloaded {} zonefiles of {}."
+                        .format(downloader.downloaded_zones, downloader.downloadable_zones), fail=False)
 
 
 if __name__ == "__main__":
