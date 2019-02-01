@@ -1,229 +1,282 @@
 #!/usr/bin/env python3
 # -*- coding:utf-8
-import requests, json, sys, os, re, datetime, logging  # , traceback
-
-proxies = {
-  'http': 'http://1.2.3.4:48888',
-  'https': 'http://1.2.3.4:48888',
-}
-
-# uncomment to deactivate proxy
+import datetime
+import json
+import logging
+import os
+import requests
+import smtplib
+import sys
 
 downloaded_zones = 0
-# retries = 0
 
 
-class czdsException(Exception):
+class GetError(Exception):
+    def __init__(self, message):
+        super().__init__(message)
+
+
+class CZDSError(Exception):
     pass
 
 
-class czdsDownloader(object):
-    file_syntax_re = re.compile("""^(\d{8})\-([a-z\-0-9]+)\-zone\-data\.txt\.gz""", re.IGNORECASE)
-    content_disposition_header_re = re.compile('^attachment; filename="([^"]+)"', re.IGNORECASE)
-
+class CZDSDownloader(object):
     def __init__(self):
         """ Create a session
         """
         self.s = requests.Session()
         self.td = datetime.datetime.today()
         config_file = os.path.dirname(os.path.realpath(__file__)) + '/config.json'
-        self.readConfig(config_file)
+        self.config = None
+        self.load_config(config_file)
+        self.retries = 0
+        self.downloaded_zones = 0
+        # these will be set up as we go
+        self.config_fd = None
+        self.directory = None
+        self.access_token = None
+        self.downloadable_zones = 0
 
-    def readConfig(self, configFilename='config.json'):
+    def load_config(self, cfg_file):
         try:
-            self.conf = json.load(open(configFilename))
-        except:
-            raise czdsException("Error loading '" + configFilename + "' file.")
+            self.config_fd = open(cfg_file, 'r')
+            self.config = json.load(self.config_fd)
+            self.config_fd.close()
+        except Exception as e:
+            self.send_msg('Failed to load configuration from {} ({})'.format(cfg_file, e))
+            sys.exit(1)
 
-    def prepareDownloadFolder(self):
-        if 'download_directory' in self.conf:
-            directory = self.conf['download_directory'] + '/'
+    def get_config_item(self, item, default_value=None):
+        if item not in self.config:
+            if default_value is None:
+                self.send_msg("Could not find mandatory item '{}' in the configuration".format(item))
+                sys.exit(1)
+
+            return default_value
+
+        return self.config[item]
+
+    def prepare_download_folder(self):
+        self.directory = self.get_config_item('output_directory') + '/' + self.td.strftime('%Y-%m-%d')
+        if not os.path.exists(self.directory):
+            os.makedirs(self.directory)
+
+    def czds_authenticate(self):
+        auth_headers = {'Content-Type': 'application/json',
+                        'Accept': 'application/json'}
+
+        credentials = {'username': self.get_config_item('czds.user'),
+                       'password': self.get_config_item('czds.password')}
+
+        auth_url = self.get_config_item('czds.auth_url') + '/api/authenticate'
+
+        try:
+            response = requests.post(auth_url, data=json.dumps(credentials), headers=auth_headers)
+
+            if response.status_code == 200:
+                self.access_token = response.json()['accessToken']
+                logging.info('Authenticated to CZDS as {}'.format(self.get_config_item('czds.user')))
+            elif response.status_code == 404:
+                self.send_msg("Invalid URL '{}' (returns a 404)".format(auth_url))
+                sys.exit(1)
+            elif response.status_code == 401:
+                self.send_msg("Authentication to CZDS for {} failed with 401, not authorized"
+                              .format(self.get_config_item('czds.user')))
+                sys.exit(1)
+            elif response.status_code == 500:
+                self.send_msg("CZDS server returned a 500 Internal Server Error for POST to '{}'".format(auth_url))
+                sys.exit(1)
+            else:
+                self.send_msg("CZDS returned {} for POST to '{}'".format(response.status_code, auth_url))
+                sys.exit(1)
+        except Exception as e:
+            self.send_msg("Failed to POST to '{}' ({})".format(auth_url, e))
+            sys.exit(1)
+
+    def send_msg(self, msg, fail=True):
+        smtp_username = self.get_config_item("smtp.username")
+        smtp_password = self.get_config_item("smtp.password")
+
+        sender = self.get_config_item('sender')
+        rcpt = self.get_config_item('recipient')
+
+        message = 'From: {}\n'.format(sender)
+        message += 'To: {}\n'.format(rcpt)
+        if fail:
+            message += 'Subject: FAILURE to fetch data from ICANN CZDS\n\n'
         else:
-            directory = './zonefiles/'
-        directory = directory + self.td.strftime('%Y-%m-%d')
-        if not os.path.exists(directory):
-            os.makedirs(directory)
-        return directory
+            message += 'Subject: SUCCESS in fetching data from ICANN CZDS\n\n'
+        message += msg
 
-    def getZonefilesList(self):
+        sys.stderr.write('{}\n'.format(msg))
+        sys.stderr.flush()
+
+        try:
+            smtpobj = smtplib.SMTP(self.get_config_item('smtp.server'),
+                                   self.get_config_item('smtp.server.port'))
+            if self.get_config_item('smtp.server.starttls'):
+                smtpobj.ehlo()
+                smtpobj.starttls()
+            else:
+                smtpobj.helo()
+            smtpobj.login(smtp_username, smtp_password)
+            smtpobj.sendmail(sender, rcpt, message)
+            smtpobj.close()
+        except smtplib.SMTPException as e:
+            logging.error('Failed to send failure e-mail: {}'.format(str(e)))
+
+    def get_with_token(self, url, stream=False):
+        try:
+            bearer_token_headers = {'Content-Type': 'application/json',
+                                    'Accept': 'application/json',
+                                    'Authorization': 'Bearer {0}'.format(self.access_token)}
+
+            response = requests.get(url, headers=bearer_token_headers, stream=stream)
+
+            if response.status_code == 200:
+                return response
+            elif response.status_code == 404:
+                raise GetError("GET for '{}' returned 404 (not found)".format(url))
+            elif response.status_code == 401:
+                raise GetError("GET for '{}' returned 401 (not authorised)".format(url))
+            elif response.status_code == 500:
+                raise GetError("GET for '{}' returned 500 (internal server error)".format(url))
+            else:
+                raise GetError("GET for '{}' returned error {}".format(url, response.status_code))
+        except Exception as e:
+            raise GetError("Failed to GET '{}' ({})".format(url, e))
+
+    def get_zonefiles_list(self):
         """ Get all the files that need to be downloaded using CZDS API.
         """
-        retries = 0
-        while retries < 11:
+        # Fetch the list of zones
+        while self.retries <= self.get_config_item('max_retries'):
+            zonelist_url = self.get_config_item("czds.download_base_url") + '/czds/downloads/links'
             try:
-                r = self.s.get(self.conf['base_url'] + '/user-zone-data-urls.json?token=' + self.conf['token'])
-            except Exception as e:
-                # global retries
-                logging.error("Caught exception in getZonefilesList, retry #{}. Error: {}".format(retries, e))
-                sys.stderr.write("Caught exception in getZonefilesList, retry #{}. Error: {}".format(retries, e))
-                # if retries < 10:
-                #     retries += 1
-                #     time.sleep(10 * retries)
-                #     self.getZonefilesList()
-                # else:
-                #     logging.error("Giving up, too many retries in getZonefilesList ({})".format(retries))
-                #     sys.exit(1)
-                retries += 1
+                zonelist_response = self.get_with_token(zonelist_url).json()
+            except GetError as e:
+                logging.error("Caught exception in get_zonefiles_list, retry #{}. Error: {}".format(self.retries, e))
+                sys.stderr.write("Caught exception in get_zonefiles_list, retry #{}. Error: {}".format(self.retries, e))
+                if self.retries == self.get_config_item('max_retries'):
+                    raise CZDSError("Maximum number of retries reached while trying to obtain zonelist.")
+                else:
+                    self.retries += 1
             else:
-                retries = 100
-                if r.status_code != 200:
-                    if r.status_code == 403:
-                        print("403 error in getZonefilesList for domain {}".format(self.conf['base_url']))
-                    raise czdsException("Unexpected response from CZDS while getZonefilesList '" +
-                                        self.conf['base_url'] + "...'., code:", r.status_code)
-                    break
                 try:
                     # remove duplicate zone files
-                    files = list(set(json.loads(r.text)))
+                    #json_response = json.loads(zonelist_response.text)
+                    full_list = list(zonelist_response)
+                    distinct_list = list(set(zonelist_response))
+                    if len(distinct_list) != len(full_list):
+                        logging.warning("Duplicate entries in zonefile list.")
+                        sys.stderr.write("Duplicate entries in zonefile list.\n")
+                        self.send_msg("Duplicate entries in zonefile list.")
                 except Exception as e:
-                    raise czdsException("Unable to parse JSON returned from CZDS: " + str(e))
-                    break
+                    raise CZDSError("Unable to parse JSON returned from CZDS: \n" + str(e))
 
-                logging.info("getZonefilesList returns {} zones".format(len(files)))
-                logging.debug("getZonefilesList returning zones are: {}".format(files))
-                return files
+                self.downloadable_zones = len(distinct_list)
+                logging.info("get_zonefiles_list returns {} zones".format(len(distinct_list)))
+                logging.debug("get_zonefiles_list returning zones are: {}".format(distinct_list))
+                return distinct_list
 
-    def parseHeaders(self, headers):
-        if 'content-disposition' not in headers:
-            raise czdsException("Missing required 'content-disposition' header in HTTP call response.")
-        elif 'content-length' not in headers:
-            raise czdsException("Missing required 'content-length' header in HTTP call response.")
-
-        f = self.content_disposition_header_re.search(headers['content-disposition'])
-        if not f:
-            raise czdsException("'content-disposition' header does not match.")
-
-        filename = f.group(1)
-
-        f = self.file_syntax_re.search(filename)
-        if not f:
-            raise czdsException("filename does not match.")
-
-        return {
-            'date': f.group(1),
-            'zone': f.group(2),
-            'filename': filename,
-            'filesize': int(headers['content-length'])
-        }
-
-    def prefetchZone(self, path):
-        """ Do a HTTP HEAD call to check if filesize changed
-        """
-        retries = 0
-        while retries < 11:
-            try:
-                r = self.s.head(self.conf['base_url'] + path)
-            except Exception as e:
-                logging.error("Caught ulrllib2.HTTPError in head, retrying #{}. Error: {}, path {}".format(retries, e, self.conf['base_url'] + path))
-                sys.stderr.write("Caught ulrllib2.HTTPError in head, retrying #{}. Error: {}, path {}\n".format(retries, e, self.conf['base_url'] + path))
-                # global retries
-                # if retries < 10:
-                #    retries += 1
-                #    time.sleep(10 * retries)
-                #    self.prefetchZone(path)
-                # else:
-                #    logging.error("Giving up, too many retries ({})".format(retries))
-                #    sys.exit(1)
-                retries += 1
-            else:
-                if r.status_code != 200:
-                    if r.status_code == 403:
-                        print("403 error in getZonefilesList for domain {}".format(self.conf['base_url']))
-                    # raise czdsException("Unexpected response from CZDS while fetching '" + path + "'.")
-                    logging.error("Unexpected response from CZDS while getZonefilesList '{}{}''.,"
-                                  " code: {}".format(self.conf['base_url'], path, r.status_code))
-                    raise czdsException("Unexpected response from CZDS while getZonefilesList '" +
-                                        self.conf['base_url'] + path + "'., code:", r.status_code)
-                    break
-                else:
-                    return self.parseHeaders(r.headers)
-
-    def isNewZone(self, directory, hData):
-        """ Check if local zonefile exists and has identical filesize
-        """
-        for filename in os.listdir(directory):
-            if hData['date'] + '-' + hData['zone'] + '-' in filename \
-               and hData['filesize'] == os.path.getsize(directory + '/' + filename):
-                return False
-        return True
-
-    def fetchZone(self, directory, path, chunksize=1024):
+    def fetch_zone(self, zone, zone_name):
         """ Do a regular GET call to fetch zonefile
         """
-        logging.debug("fetching zone {}".format(self.conf['base_url'] + path))
-        retries = 0
-        while retries < 11:
+        logging.debug("Downloading zone '{}' from '{}'".format(zone_name, zone))
+
+        while self.retries <= self.get_config_item('max_retries'):
             try:
-                r = self.s.get(self.conf['base_url'] + path, stream=True)
-            except Exception as e:
-                logging.error("Caught ulrllib2.HTTPError, retrying. Error: {}".format(e))
-                sys.stderr.write("Caught ulrllib2.HTTPError, retrying. Error: {}".format(e))
-                # global retries
-                # if retries < 10:
-                #    retries += 1
-                #    time.sleep(10 * retries)
-                #    self.fetchZone(directory, path, chunksize)
-                # else:
-                #    logging.error("Giving up, too many retries ({})".format(retries))
-                #    sys.exit(1)
-                retries += 1
+                download = self.get_with_token(zone, stream=True)
+            except GetError as e:
+                logging.error("Caught exception in fetch_zone, retry #{}. Error: {}".format(self.retries, e))
+                sys.stderr.write("Caught exception in fetch_zone, retry #{}. Error: {}".format(self.retries, e))
+                if self.retries == self.get_config_item('max_retries'):
+                    logging.error("Maximum number of retries reached while trying to obtain zonefiles. " 
+                                  "Last zone attempted (and failed): {}".format(zone_name))
+                    self.send_msg("Maximum number of retries reached while trying to obtain zonefiles. "
+                                  "Last zone attempted (and failed): {}".format(zone_name))
+                    raise CZDSError("Maximum number of retries reached while trying to obtain zonefiles. "
+                                    "Last zone attempted (and failed): {}".format(zone_name))
+                else:
+                    self.retries += 1
             else:
-                retries = 100
-                if r.status_code != 200:
-                    if r.status_code == 403:
-                        print("403 error in getZonefilesList for domain {}".format(self.conf['base_url']))
+                if 'Content-Type' not in download.headers:
+                    self.send_msg("GET for '{}' did not return a content type in the header".format(zone))
+                    raise CZDSError("GET for '{}' did not return a content type in the header".format(zone))
 
-                    # raise czdsException("Unexpected response from CZDS while fetching '" + path + "'.")
-                    logging.warning("Unexpected response from CZDS while getZonefilesList '" +
-                                    self.conf['base_url'] + path + "'., code:", r.status_code)
-                    raise czdsException("Unexpected response from CZDS while getZonefilesList '" +
-                                        self.conf['base_url'] + path + "'., code:", r.status_code)
-                    break
-                hData = self.parseHeaders(r.headers)
-                finalOutputFile = directory + '/' + hData['zone'] + '.zone.gz'
-                outputFile = finalOutputFile + '.tmp'
-
-                if os.path.isfile(finalOutputFile):
-                    logging.warning("file for zone '{}' already exists!".format(hData['zone']))
-                    return
-
-                with open(outputFile, 'wb') as f:
-                    for chunk in r.iter_content(chunksize):
-                        f.write(chunk)
-
-                os.rename(outputFile, finalOutputFile)
-                logging.debug("Downloaded \"{}\" zone".format(hData['zone']))
-                global downloaded_zones
-                downloaded_zones = downloaded_zones + 1
+                if download.headers['Content-Type'] != 'application/x-gzip':
+                    self.send_msg("Unsupported content type '{}' for '{}'"
+                                  .format(download.headers['Content-Type'], zone))
+                    raise CZDSError("Unsupported content type '{}' for '{}'"
+                                    .format(download.headers['Content-Type'], zone))
+                return download
 
     def fetch(self):
-        directory = self.prepareDownloadFolder()
-        logging.basicConfig(filename=directory + "/downloader.log", level=logging.DEBUG,
-                            format='%(asctime)s %(levelname)s:%(name)s:%(module)s:%(funcName)s: %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
-        logging.warning("testlog")
-        paths = self.getZonefilesList()
-        # Grab each file.
-        for path in paths:
-            try:
-                if 'prefetch' in self.conf and self.conf['prefetch']:
-                    hData = self.prefetchZone(path)
-                    if not self.isNewZone(directory, hData):
-                        continue
-                self.fetchZone(directory, path)
-            except czdsException as e:
-                logging.info("Exception at fetch: {}".format(e))
+        self.prepare_download_folder()
+        logging.basicConfig(filename=self.directory + "/downloader.log", level=logging.DEBUG,
+                            format='%(asctime)s %(levelname)s:%(name)s:%(module)s:%(funcName)s: %(message)s',
+                            datefmt='%Y-%m-%d %H:%M:%S')
+
+        which_zones = self.get_config_item("zones", "all")
+        print('Fetching the following zones from CZDS: {}'.format(which_zones))
+
+        try:
+            zonelist = self.get_zonefiles_list()
+        except CZDSError as e:
+            self.send_msg("Unrecoverable error: could not obtain zonefiles list" + str(e))
+            sys.exit(1)
+
+        # Fetch the zones specified
+        for zone in zonelist:
+            # Extract the zone name from the URL
+            zone_name = zone.split('/')[-1]
+            if which_zones == 'all' or zone_name in which_zones:
+                try:
+                    download = self.fetch_zone(zone, zone_name)
+                except CZDSError as e:
+                    logging.error("Failed to download zone: " + str(e))
+                else:
+                    out_name = '{}/{}.gz'.format(self.directory, zone_name)
+
+                    if 'Content-Length' in download.headers:
+                        logging.info('Downloading {} bytes to {}'.format(download.headers['Content-Length'], out_name))
+                    else:
+                        logging.info('Downloading to {}'.format(out_name))
+
+                    try:
+                        out_fd = open(out_name, 'wb')
+
+                        for chunk in download.iter_content(int(self.get_config_item('output_buffer_size', 1024*1024))):
+                            out_fd.write(chunk)
+                            out_fd.flush()
+
+                        out_fd.close()
+                    except Exception as e:
+                        self.send_msg("Failed to write zone '{}' to file ({})".format(zone_name, e))
+                        sys.stderr.write("CZDS: After downloading {} domains, fatal error occurred: {}.\n"
+                                         .format(self.downloaded_zones, e))
+                        logging.error("CZDS: After downloading {} domains, fatal error occurred: {}."
+                                      .format(self.downloaded_zones, e))
+                        sys.exit(1)
 
 
-# TODO: make this a proper main function
-try:
-    downloader = czdsDownloader()
+def main():
+    if len(sys.argv) != 2:
+        sys.stderr.write('Invoke with config file name as only argument.\n')
+        sys.exit(1)
+
+    downloader = CZDSDownloader()
+
+    downloader.czds_authenticate()
+
     downloader.fetch()
-except Exception as e:
-    sys.stderr.write("CZDS: After downloading {} domains, fatal error occoured: {}.\n".format(downloaded_zones, e))
-    logging.error("CZDS: After downloading {} domains, fatal error occoured: {}.".format(downloaded_zones, e))
-    # sys.stderr.write(traceback.print_exception())
-    # sys.stderr.write(traceback.print_exc())
-    exit(1)
-else:
-    logging.info("Complete, downloaded {} zone files.".format(downloaded_zones))
-    sys.stderr.write("CZDownloads: Complete, downloaded {} zone files.\n".format(downloaded_zones))
+
+    logging.info("Complete, downloaded {} zone files of {}.".format(downloaded_zones, downloader.downloadable_zones))
+    sys.stderr.write("CZDownloads: Complete, downloaded {} zone files of {}.\n".format(downloaded_zones,
+                                                                                       downloader.downloadable_zones))
+    downloader.send_msg("Downloaded {} zonefiles of {}.".format(downloader.downloaded_zones,
+                                                                downloader.downloadable_zones), fail=False)
+
+
+if __name__ == "__main__":
+    main()
