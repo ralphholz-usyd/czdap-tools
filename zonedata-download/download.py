@@ -2,6 +2,13 @@
 # -*- coding:utf-8
 import requests, json, sys, os, re, datetime, logging  # , traceback
 
+proxies = {
+  'http': 'http://1.2.3.4:48888',
+  'https': 'http://1.2.3.4:48888',
+}
+
+# uncomment to deactivate proxy
+
 downloaded_zones = 0
 # retries = 0
 
