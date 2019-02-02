@@ -193,7 +193,11 @@ class CZDSDownloader(object):
         """
         logging.debug("Downloading zone '{}' from '{}'".format(zone_name, zone))
 
-        while self.retries <= self.get_config_item('max_retries'):
+        # Never invest more than 10% of the remaining retries into fetching one zone
+        current_retries = 0
+        max_fetch_zone_retries = int(self.retries / 10)
+
+        while self.retries <= self.get_config_item('max_retries') and current_retries <= max_fetch_zone_retries:
             try:
                 download = self.get_with_token(zone, stream=True)
             except GetError as e:
@@ -208,6 +212,7 @@ class CZDSDownloader(object):
                                     "Last zone attempted (and failed): {}".format(zone_name))
                 else:
                     self.retries += 1
+                    current_retries += 1
             else:
                 if 'Content-Type' not in download.headers:
                     self.send_msg("GET for '{}' did not return a content type in the header".format(zone))
@@ -255,6 +260,7 @@ class CZDSDownloader(object):
                             out_fd.flush()
 
                         out_fd.close()
+                        self.downloaded_zones += 1
                     except Exception as e:
                         self.send_msg("Failed to write zone '{}' to file ({})".format(zone_name, e))
                         sys.stderr.write("CZDS: After downloading {} domains, fatal error occurred: {}.\n"
