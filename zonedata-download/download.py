@@ -36,6 +36,12 @@ class CZDSDownloader(object):
         self.downloadable_zones = 0
         # set up everything, including logging
         self.prepare_download_folder()
+        # proxies
+        if self.get_config_item('proxy.http') != '' or self.get_config_item('proxy.https') != '':
+            self.proxies = {'http': self.get_config_item('proxy.http'),
+                            'https': self.get_config_item('proxy.https')}
+        else:
+            self.proxies = None
 
     def load_config(self, cfg_file):
         try:
@@ -74,7 +80,8 @@ class CZDSDownloader(object):
         auth_url = self.get_config_item('czds.auth_url') + '/api/authenticate'
 
         try:
-            response = requests.post(auth_url, data=json.dumps(credentials), headers=auth_headers)
+            response = requests.post(auth_url, data=json.dumps(credentials),
+                                     headers=auth_headers, proxies=self.proxies)
 
             if response.status_code == 200:
                 self.access_token = response.json()['accessToken']
@@ -134,7 +141,7 @@ class CZDSDownloader(object):
                                     'Accept': 'application/json',
                                     'Authorization': 'Bearer {0}'.format(self.access_token)}
 
-            response = requests.get(url, headers=bearer_token_headers, stream=stream)
+            response = requests.get(url, headers=bearer_token_headers, stream=stream, proxies=self.proxies)
 
             if response.status_code == 200:
                 return response
